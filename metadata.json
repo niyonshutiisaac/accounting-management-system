@@ -1,0 +1,6 @@
+{
+  "name": "KoraBooks SME Accounting",
+  "description": "An enterprise-grade, localized SME accounting, tax, inventory, and payroll platform for Rwanda and East Africa with embedded AI insights.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

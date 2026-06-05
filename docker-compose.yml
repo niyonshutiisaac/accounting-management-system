@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  # KoraBooks main full-stack server
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://korbooks_admin:KoraPass321@postgres:5432/korabooks_db?schema=public
+      - REDIS_URL=redis://redis:6379
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      - postgres
+      - redis
+
+  # Relational SQL database backend (Rwanda multi-tenant core data)
+  postgres:
+    image: postgres:15-alpine
+    container_name: korabooks_postgres
+    restart: always
+    environment:
+      - POSTGRES_USER=korbooks_admin
+      - POSTGRES_PASSWORD=KoraPass321
+      - POSTGRES_DB=korabooks_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Async job cache queue for push reports and tax filings
+  redis:
+    image: redis:7-alpine
+    container_name: korabooks_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:

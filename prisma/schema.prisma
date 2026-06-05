@@ -1,0 +1,349 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum TaxType {
+  VAT_18
+  VAT_EXEMPT
+  WHT_15
+  WHT_3
+}
+
+enum SalesStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  PARTIAL
+}
+
+model Organization {
+  id                 String   @id @default(uuid())
+  name               String
+  tin                String   @unique // 9-digit Rwandan Tax Identification Number
+  currency           String   @default("RWF")
+  subscriptionPlan   String   @default("Professional")
+  isKigaliRegistered Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  branches  Branch[]
+  employees Employee[]
+  customers Customer[]
+  suppliers Supplier[]
+}
+
+model Branch {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  location       String
+  manager        String
+  isMain         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  journals       JournalEntry[]
+  invoices       Invoice[]
+  bills          Bill[]
+  expenses       Expense[]
+  quotations     Quotation[]
+  stockTransfersFrom StockTransfer[] @relation("FromBranch")
+  stockTransfersTo   StockTransfer[] @relation("ToBranch")
+  
+  @@index([organizationId])
+}
+
+model Account {
+  id             String      @id @default(uuid())
+  code           String      @unique // e.g. "1010", "2200"
+  name           String
+  type           AccountType
+  balance        Decimal     @default(0) @db.Decimal(18, 2)
+  description    String?
+  isSystem       Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+
+  journalLines   JournalEntryLine[]
+  expenses       Expense[]
+}
+
+model JournalEntry {
+  id           String             @id @default(uuid())
+  branchId     String
+  date         DateTime
+  reference    String
+  narration    String
+  isApproved   Boolean            @default(true)
+  createdBy    String
+  createdAt    DateTime           @default(now())
+
+  branch       Branch             @relation(fields: [branchId], references: [id])
+  lines        JournalEntryLine[]
+
+  @@index([branchId])
+}
+
+model JournalEntryLine {
+  id             String       @id @default(uuid())
+  journalEntryId String
+  accountId      String
+  debit          Decimal      @db.Decimal(18, 2)
+  credit         Decimal      @db.Decimal(18, 2)
+  memo           String?
+
+  journalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account        Account      @relation(fields: [accountId], references: [id])
+
+  @@index([journalEntryId])
+  @@index([accountId])
+}
+
+model Customer {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  name               String
+  tin                String?
+  email              String
+  phone              String
+  address            String
+  creditLimit        Decimal  @db.Decimal(18, 2)
+  outstandingBalance Decimal  @default(0) @db.Decimal(18, 2)
+  createdAt          DateTime @default(now())
+
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoices           Invoice[]
+  quotations         Quotation[]
+
+  @@index([organizationId])
+}
+
+model Supplier {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  tin            String?
+  email          String
+  phone          String
+  address        String
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bills          Bill[]
+
+  @@index([organizationId])
+}
+
+model Product {
+  id               String   @id @default(uuid())
+  code             String   @unique
+  name             String
+  type             String   // PHYSICAL | SERVICE
+  category         String
+  sku              String   @unique
+  costPrice        Decimal  @db.Decimal(18, 2)
+  sellingPrice     Decimal  @db.Decimal(18, 2)
+  taxType          TaxType  @default(VAT_18)
+  reorderLevel     Int      @default(10)
+  stockCount       Int      @default(0) // Aggregated
+  createdAt        DateTime @default(now())
+  
+  invoiceItems     InvoiceItem[]
+  stockTransfers   StockTransfer[]
+}
+
+model Invoice {
+  id            String      @id @default(uuid())
+  branchId      String
+  customerId    String
+  invoiceNumber String      @unique
+  date          DateTime
+  dueDate       DateTime
+  subtotal      Decimal     @db.Decimal(18, 2)
+  taxTotal      Decimal     @db.Decimal(18, 2)
+  total         Decimal     @db.Decimal(18, 2)
+  amountPaid    Decimal     @default(0) @db.Decimal(18, 2)
+  status        SalesStatus @default(SENT)
+  momoReference String?
+  createdAt     DateTime    @default(now())
+
+  branch        Branch        @relation(fields: [branchId], references: [id])
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  items         InvoiceItem[]
+
+  @@index([branchId])
+  @@index([customerId])
+}
+
+model InvoiceItem {
+  id         String   @id @default(uuid())
+  invoiceId  String
+  productId  String
+  quantity   Int
+  unitPrice  Decimal  @db.Decimal(18, 2)
+  discount   Decimal  @default(0) @db.Decimal(18, 2)
+  taxType    TaxType  @default(VAT_18)
+  taxAmount  Decimal  @db.Decimal(18, 2)
+  total      Decimal  @db.Decimal(18, 2)
+
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id])
+
+  @@index([invoiceId])
+  @@index([productId])
+}
+
+model Quotation {
+  id          String   @id @default(uuid())
+  branchId    String
+  customerId  String
+  quoteNumber String   @unique
+  date        DateTime
+  validUntil  DateTime
+  total       Decimal  @db.Decimal(18, 2)
+  status      String   // DRAFT | SENT | APPROVED | DECLINED | CONVERTED
+  createdAt   DateTime @default(now())
+
+  branch      Branch   @relation(fields: [branchId], references: [id])
+  customer    Customer @relation(fields: [customerId], references: [id])
+
+  @@index([branchId])
+  @@index([customerId])
+}
+
+model Bill {
+  id         String   @id @default(uuid())
+  branchId   String
+  supplierId String
+  billNumber String   @unique
+  date       DateTime
+  dueDate    DateTime
+  subtotal   Decimal  @db.Decimal(18, 2)
+  taxTotal   Decimal  @db.Decimal(18, 2)
+  total      Decimal  @db.Decimal(18, 2)
+  status     String   // UNPAID | PAID | PARTIAL | OVERDUE
+  createdAt  DateTime @default(now())
+
+  branch     Branch   @relation(fields: [branchId], references: [id])
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+
+  @@index([branchId])
+  @@index([supplierId])
+}
+
+model StockTransfer {
+  id           String   @id @default(uuid())
+  date         DateTime @default(now())
+  productId    String
+  fromBranchId String
+  toBranchId   String
+  quantity     Int
+  status       String   // PENDING | SHIPPED | COMPLETED
+
+  product      Product  @relation(fields: [productId], references: [id])
+  fromBranch   Branch   @relation("FromBranch", fields: [fromBranchId], references: [id])
+  toBranch     Branch   @relation("ToBranch", fields: [toBranchId], references: [id])
+
+  @@index([productId])
+  @@index([fromBranchId])
+  @@index([toBranchId])
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  branchId    String
+  accountId   String
+  date        DateTime
+  category    String
+  amount      Decimal  @db.Decimal(18, 2)
+  taxAmount   Decimal  @db.Decimal(18, 2)
+  merchant    String
+  description String
+  receiptUrl  String?
+  isApproved  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  branch      Branch   @relation(fields: [branchId], references: [id])
+  account     Account  @relation(fields: [accountId], references: [id])
+
+  @@index([branchId])
+  @@index([accountId])
+}
+
+model Employee {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  nid            String   @unique // 16-digit Rwandan NID
+  email          String
+  phone          String
+  role           String
+  baseSalary     Decimal  @db.Decimal(18, 2)
+  bankAccount    String
+  allowances     Decimal  @default(0) @db.Decimal(18, 2)
+  deductions     Decimal  @default(0) @db.Decimal(18, 2)
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payslips       Payslip[]
+
+  @@index([organizationId])
+}
+
+model Payslip {
+  id                     String   @id @default(uuid())
+  employeeId             String
+  period                 String
+  baseSalary             Decimal  @db.Decimal(18, 2)
+  allowances             Decimal  @db.Decimal(18, 2)
+  grossSalary            Decimal  @db.Decimal(18, 2)
+  rssbEmployee           Decimal  @db.Decimal(18, 2)
+  maternityLeaveEmployee Decimal  @db.Decimal(18, 2)
+  paye                   Decimal  @db.Decimal(18, 2)
+  totalDeductions        Decimal  @db.Decimal(18, 2)
+  netPay                 Decimal  @db.Decimal(18, 2)
+  isPaid                 Boolean  @default(false)
+  paymentDate            DateTime?
+  createdAt              DateTime @default(now())
+
+  employee               Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+}
+
+model TaxObligation {
+  id            String   @id @default(uuid())
+  period        String
+  type          String   // VAT | PAYE | RSSB | WHT
+  taxableAmount Decimal  @db.Decimal(18, 2)
+  taxDue        Decimal  @db.Decimal(18, 2)
+  status        String   // PENDING | FILED | OVERDUE
+  dueDate       DateTime
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  timestamp   DateTime @default(now())
+  userEmail   String
+  role        String
+  action      String
+  ip          String
+  beforeValue String?  @db.Text
+  afterValue  String?  @db.Text
+}

@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: korabooks-platform-deployment
+  labels:
+    app: korabooks
+    tier: web
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: korabooks
+  template:
+    metadata:
+      labels:
+        app: korabooks
+    spec:
+      containers:
+        - name: korabooks-app
+          image: gcr.io/korabooks-enterprise/korabooks-web:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1024Mi"
+          readinessProbe:
+            httpGet:
+              path: /api/data
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/data
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-secrets
+                  key: database-url
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: api-secrets
+                  key: gemini-api-key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: korabooks-service
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+  selector:
+    app: korabooks
